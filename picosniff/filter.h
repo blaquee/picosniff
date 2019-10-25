@@ -1,0 +1,8 @@
+#pragma once
+
+#include <ntifs.h>
+
+typedef struct _PICOSNIFF_DEVICE_EXTENSION
+{
+	PDEVICE_OBJECT AttachedToDeviceObject;
+} PICOSNIFF_DEVICE_EXTENSION, * PPICOSNIFF_DEVICE_EXTENSION;
