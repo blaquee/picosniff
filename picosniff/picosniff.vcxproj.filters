@@ -32,10 +32,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="nt.h">
+    <ClInclude Include="filter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="filter.h">
+    <ClInclude Include="IrpHandlers.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Header.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

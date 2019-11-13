@@ -1,21 +1,23 @@
 #include <ntifs.h>
 #include <ntddk.h>
-#include "nt.h"
+#include "IrpHandlers.h"
+#include "Header.h"
 #include "filter.h"
+
+
+
+PDEVICE_OBJECT g_MyDevObject = nullptr;
+PPICOSNIFF_DEVICE_EXTENSION g_PicoDevExtension = nullptr;
 
 UNICODE_STRING g_LxssDeviceName = RTL_CONSTANT_STRING(L"\\Device\\lxss");
 UNICODE_STRING g_PicoSniffDevice = RTL_CONSTANT_STRING(L"\\Device\\picosniff");
 UNICODE_STRING g_PicoSymbolicLink = RTL_CONSTANT_STRING(L"\\?\\picosniff");
-PDEVICE_OBJECT g_MyDevObject = nullptr;
-PPICOSNIFF_DEVICE_EXTENSION g_PicoDevExtension = nullptr;
-
-
 static DRIVER_UNLOAD DriverUnload;
 extern char* PsGetProcessImageFileName(PEPROCESS p);
 NTSTATUS InstallProcessCallback();
 NTSTATUS RemoveProcessCallback();
 VOID CreatePicoProcessNotifyRoutine(PEPROCESS, HANDLE, PPS_CREATE_NOTIFY_INFO);
-NTSTATUS PicoPassthroughFilter(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+
 LPNTQUERYINFORMATIONPROCESS ZwQueryInformationProcess = NULL;
 
 // borrowed code
@@ -82,7 +84,7 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 	Status = IoCreateDevice(DriverObject,
 							sizeof(PICOSNIFF_DEVICE_EXTENSION), 
 							&g_PicoSniffDevice,
-							FILE_DEVICE_UNKNOWN,
+							FILE_DEVICE_NETWORK_FILE_SYSTEM,
 							0,
 							TRUE,
 							&g_MyDevObject);
@@ -100,6 +102,12 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 									  FILE_READ_DATA,
 									  &foLxssFileObject,
 									  &pdLxssDeviceObject);
+
+	if (foLxssFileObject != nullptr)
+	{
+		g_PicoDevExtension->AttachedFileObject = foLxssFileObject;
+	}
+
 	if(!NT_SUCCESS(Status))
 	{
 		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
@@ -166,6 +174,8 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 	{
 		DriverObject->MajorFunction[i] = PicoPassthroughFilter;
 	}
+
+	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = PicoDeviceIOFilter;
 	
 	DriverObject->DriverUnload = DriverUnload;
 	
@@ -195,8 +205,8 @@ VOID CreatePicoProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId,
 
 	if (CreateInfo->IsSubsystemProcess)
 	{
-		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-				   "Found Subsystem Process\n");
+		/*DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+				   "Found Subsystem Process\n");*/
 
 		//retrieve a pseudo handle
 		InitializeObjectAttributes(&objAttr, 0,
@@ -298,24 +308,3 @@ NTSTATUS RemoveProcessCallback()
 		));
 }
 
-//NTSTATUS PicoIoControlFilter(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-//{
-//	NTSTATUS status;
-//	return STATUS_SUCCESS;
-//}
-
-NTSTATUS PicoPassthroughFilter(PDEVICE_OBJECT DeviceObject, PIRP Irp)
-{
-	UNREFERENCED_PARAMETER(DeviceObject);
-	//PPICOSNIFF_DEVICE_EXTENSION pDevExt = (PPICOSNIFF_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
-	PIO_STACK_LOCATION curStack = IoGetCurrentIrpStackLocation(Irp);
-	
-	DbgPrintEx(
-		DPFLTR_IHVDRIVER_ID,
-		DPFLTR_ERROR_LEVEL,
-		"Current Major Function: %s\n",
-		MajorFunctionToString(curStack->MajorFunction));
-	
-	IoSkipCurrentIrpStackLocation(Irp);
-	return IoCallDriver(g_PicoDevExtension->AttachedToDeviceObject, Irp);
-}

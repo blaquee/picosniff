@@ -157,7 +157,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="filter.h" />
-    <ClInclude Include="nt.h" />
+    <ClInclude Include="IrpHandlers.h" />
+    <ClInclude Include="Header.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
