@@ -8,10 +8,13 @@
 
 PDEVICE_OBJECT g_MyDevObject = nullptr;
 PPICOSNIFF_DEVICE_EXTENSION g_PicoDevExtension = nullptr;
+_DeviceControlFilter g_DevControlFltOriginal = nullptr;
+PDRIVER_OBJECT g_LxCoreDriverObject = nullptr;
 
 UNICODE_STRING g_LxssDeviceName = RTL_CONSTANT_STRING(L"\\Device\\lxss");
 UNICODE_STRING g_PicoSniffDevice = RTL_CONSTANT_STRING(L"\\Device\\picosniff");
 UNICODE_STRING g_PicoSymbolicLink = RTL_CONSTANT_STRING(L"\\?\\picosniff");
+
 static DRIVER_UNLOAD DriverUnload;
 extern char* PsGetProcessImageFileName(PEPROCESS p);
 NTSTATUS InstallProcessCallback();
@@ -58,6 +61,28 @@ PCSTR MajorFunctionToString(UCHAR major)
 }
 
 
+NTSTATUS GetProcNameFromFileObject(PFILE_OBJECT FileObject, PUNICODE_STRING FileName)
+{
+	NTSTATUS Status;
+	//PUNICODE_STRING FilePath;
+
+	if (!FileObject)
+	{
+		return STATUS_INVALID_PARAMETER;
+	}
+	// no file name present
+	if (&FileObject->FileName == nullptr)
+	{
+		// we can try to see if the section object contains a backing file
+		// or the cache manager contains a pointer to another file object also.
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	RtlInitUnicodeString(FileName, FileObject->FileName.Buffer);
+
+	return STATUS_SUCCESS;
+}
+
 extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
@@ -77,6 +102,7 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 		{
 			DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
 					   "Could not resolve Export\n");
+			return STATUS_UNSUCCESSFUL;
 		}
 	}
 	
@@ -114,10 +140,8 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 				   "Could not get Pointer to Device %wZ\n",
 				   g_LxssDeviceName);
 		IoDeleteDevice(g_MyDevObject);
+		return STATUS_UNSUCCESSFUL;
 	}
-	
-	// we don't need the file object and must release it
-
 	
 	// attach to the Lxss Device Object
 	Status = IoAttachDeviceToDeviceStackSafe(g_MyDevObject,
@@ -135,6 +159,7 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 		DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
 				   "Could not attach to Device\n");
 		IoDeleteDevice(g_MyDevObject);
+		return STATUS_UNSUCCESSFUL;
 		
 	}
 	DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
@@ -176,7 +201,29 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING Reg
 	}
 
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = PicoDeviceIOFilter;
-	
+
+	// We aren't receiving the device IO controls for some reason.
+	// We'll overwrite the IRP_MJ_DEVICE_CONTROL and save the old one.
+	/*
+	g_LxCoreDriverObject = pdLxssDeviceObject->DriverObject;
+	g_DevControlFltOriginal = g_LxCoreDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL];
+
+	DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+			   DPFLTR_ERROR_LEVEL, "Current Address of DeviceIO Dispatch: 0x08%X\n"
+			   "PicoDriverDispatch: 0x08%X\n",
+			   g_DevControlFltOriginal, PicoDeviceIOFilter);
+	if (g_DevControlFltOriginal)
+	{
+		//__debugbreak();
+		InterlockedExchange64((PLONG64)&g_LxCoreDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL],
+			(LONG64)PicoDeviceIOFilter);
+
+		DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+				   DPFLTR_ERROR_LEVEL, "Current Address of DeviceIO Dispatch: 0x08%X\n"
+				   "PicoDriverDispatch: 0x08%X\n",
+				   g_DevControlFltOriginal, PicoDeviceIOFilter);
+	}
+	*/
 	DriverObject->DriverUnload = DriverUnload;
 	
 	// clear the initialization flag so we can receive IRPs
@@ -245,11 +292,11 @@ VOID CreatePicoProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId,
 
 			DbgPrintEx(DPFLTR_IHVDRIVER_ID,
 					   DPFLTR_ERROR_LEVEL,
-					   "Pico Process Started: %wZ\n\tPico Pid: %d" \
-					   "\tFlags: 0x%08X\n",
+					   "Pico Process Started: %wZ\n",
+					   "\tPico Pid: %d\n",
 					   *sProcessImageName,
-					   HandleToULong(ProcessId),
-					   CreateInfo->Flags);
+					   HandleToULong(ProcessId)
+					   );
 		}
 
 	}
@@ -263,6 +310,12 @@ VOID CreatePicoProcessNotifyRoutine(PEPROCESS Process, HANDLE ProcessId,
 VOID DriverUnload(PDRIVER_OBJECT DriverObject)
 {
 	UNREFERENCED_PARAMETER(DriverObject);
+
+	if (g_DevControlFltOriginal)
+	{
+		// atomic?
+		g_LxCoreDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = g_DevControlFltOriginal;
+	}
 
 	RemoveProcessCallback();
 	

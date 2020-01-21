@@ -4,6 +4,10 @@
 
 
 
+typedef struct _PICOCONTEXT
+{
+	PVOID DeviceCode;
+}PICOCONTEXT, *PPICOCONTEXT;
 
 typedef struct _PICOSNIFF_DEVICE_EXTENSION
 {
@@ -11,12 +15,15 @@ typedef struct _PICOSNIFF_DEVICE_EXTENSION
 	PFILE_OBJECT AttachedFileObject;
 } PICOSNIFF_DEVICE_EXTENSION, * PPICOSNIFF_DEVICE_EXTENSION;
 
+typedef NTSTATUS(*_DeviceControlFilter)(PDEVICE_OBJECT, PIRP);
 
 extern UNICODE_STRING g_LxssDeviceName;
 extern UNICODE_STRING g_PicoSniffDevice;
 extern UNICODE_STRING g_PicoSymbolicLink;
 extern PDEVICE_OBJECT g_MyDevObject;
 extern PPICOSNIFF_DEVICE_EXTENSION g_PicoDevExtension;
+extern PDRIVER_OBJECT g_LxCoreDriverObject;
+extern _DeviceControlFilter g_DevControlFltOriginal;
 
 
 extern "C" {
